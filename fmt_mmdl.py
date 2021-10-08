@@ -137,7 +137,7 @@ def LoadModel(data, mdlList):
         
         #vertex buffer. Due to some transform we can't commit some semantics directly
         bs.seek(vBufferInfoOffset + 12)
-        decompSize = bs.readUInt()
+        vBufferSize = bs.readUInt()
         vCount = bs.readUInt()
         compSize = bs.readUInt()
         vBufferOffset = bs.readUInt64()        
@@ -151,7 +151,13 @@ def LoadModel(data, mdlList):
             vInfos.append(vInfo)
         
         bs.seek(vBufferOffset)
-        vBuffer = rapi.decompInflate(bs.readBytes(compSize),decompSize, 15+32) #gzip decomp, for 15 + 32 see : https://stackoverflow.com/questions/1838699/how-can-i-decompress-a-gzip-stream-with-zlib
+        vBuffer = None
+        if bs.readUInt() != 559903: #check if buffer is gzip compressed
+            bs.seek(-4,1)
+            vBuffer = bs.readBytes(vBufferSize)
+        else: #compressed
+            bs.seek(-4,1)
+            vBuffer = rapi.decompInflate(bs.readBytes(compSize),vBufferSize, 15+32) #gzip decomp, for 15 + 32 see : https://stackoverflow.com/questions/1838699/how-can-i-decompress-a-gzip-stream-with-zlib  
         
         #save position, normal and joint indices info because of eventual transforms
         posOffset, normalOffset, jIdxValues, jIdxCount = None, None, None, None
@@ -216,7 +222,7 @@ def LoadModel(data, mdlList):
         idxBuffer = None
         if bs.readUInt() != 559903: #too lazy to find the actual compression flag, just check if the gzip header is there
             bs.seek(-4,1)
-            idxBuffer = bs.readBytes(compSize)
+            idxBuffer = bs.readBytes(idxCount*2)
         else: #compressed
             bs.seek(-4,1)
             idxBuffer = rapi.decompInflate(bs.readBytes(compSize),idxCount*2, 15+32)        
