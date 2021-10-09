@@ -1,6 +1,6 @@
 from inc_noesis import *
 
-#Version 0.3
+#Version 0.4
 
 # =================================================================
 # Plugin options
