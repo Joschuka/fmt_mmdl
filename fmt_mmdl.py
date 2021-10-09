@@ -1,11 +1,14 @@
 from inc_noesis import *
 
-#Version 0.4
+#Version 0.3
 
 # =================================================================
 # Plugin options
 # =================================================================
 
+dumpPath = r"" # set the path dump, only necessary if you're using the texture scanning. For ex : r"D:\\Metroid dread\\010093801237C000\\romfs"
+bTextureScanning = False #If set to True, try to guess which file is associated to the model using the helper file.
+bLoadVertexColors = False #if set to True, load the vertex colors for the mesh
 
 # =================================================================
 # Misc
@@ -50,6 +53,13 @@ class VertexInfo:
         self.dataType = bs.readUShort() # guess
         self.count = bs.readUShort()
         bs.readUInt() #unk
+        
+class TexNamePathInfo:
+    def __init__(self):
+        self.diffuseName = None
+        self.diffusePath = None
+        self.normalName = None
+        self.normalPath = None
 
 class NvBlockHeader():
     def __init__(self):
@@ -104,6 +114,14 @@ class NvTextureHeader():
 # =================================================================
 
 def LoadRGBA(data, texList):
+    global textureList
+    textureList = []
+    processRGBA(data)
+    for tex in textureList:
+        texList.append(tex)
+    return 1
+
+def processRGBA(data, texName = None):
     # Decompress
     tempBs = NoeBitStream(data)    
     tempBs.seek(tempBs.getSize() - 4)
@@ -168,8 +186,11 @@ def LoadRGBA(data, texList):
             textureData = rapi.callExtensionMethod("untile_blocklineargob", textureData, widthInBlocks, heightInBlocks, blockSize, maxBlockHeight)
             textureData = rapi.imageDecodeDXT(textureData, width, height, format)
             format = noesis.NOESISTEX_RGBA32
-        tex = NoeTexture("temp.dds", width, height, textureData, format)
-        texList.append(tex)    
+        if texName is None:
+            tex = NoeTexture("temp.dds", width, height, textureData, format)
+        else:
+            tex = NoeTexture(texName + ".dds", width, height, textureData, format)
+        textureList.append(tex)    
     
     return 1
 
@@ -182,6 +203,7 @@ def LoadModel(data, mdlList):
     ctx = rapi.rpgCreateContext()
     bs = NoeBitStream(data)
     bs.setEndian(NOE_LITTLEENDIAN)
+    rapi.processCommands('-texnorepfn')    
     
     bs.readUInt() #fourcc
     bs.readUInt() #version info ?    
@@ -249,7 +271,68 @@ def LoadModel(data, mdlList):
         bs.seek(info[2])
         bs.seek(bs.readUInt64())
         meshNames.append(bs.readString())
+        
+    #Grab the texture names if relevant
+    textureNamePathInfo = []
+    if bTextureScanning:
+        textureNamesList = []
+        for info in meshesInfo:
+            bs.seek(info[1] + 304)
+            diffuseNameOffs, _, normalNameOffs = bs.readUInt64(), bs.readUInt64(), bs.readUInt64()
+            bs.seek(diffuseNameOffs)
+            diffuseName = bs.readString()
+            bs.seek(normalNameOffs)
+            normalName = bs.readString()
+            textureNamesList.append([diffuseName, normalName])
+        
+        #check if we have at list a valid name, if so load the map from the file
+        bHasValidName = False
+        for textureNames in textureNamesList:
+            diffName, normName = textureNames[0], textureNames[1]
+            if diffName or normName:
+                bHasValidName = True
+                break
+                
+        texNameMapPath = noesis.getPluginsPath() + os.sep + "python" + os.sep + "dreadMap.txt"
+        if bHasValidName and rapi.checkFileExists(texNameMapPath):
+            #load the map from the file
+            texNameMap = {}
+            with open(texNameMapPath) as f:                
+                lines = f.readlines()
+            for line in lines:
+                texNameMap[line.split()[0]] = line.split()[1]
+            
+            for textureNames in textureNamesList:
+                diffName, normName = textureNames[0], textureNames[1]
+                info = TexNamePathInfo()
+                if diffName and diffName in texNameMap:
+                    info.diffuseName = diffName
+                    info.diffusePath = dumpPath + os.sep + "textures" + os.sep + texNameMap[diffName]
+                if normName and normName in texNameMap:
+                    info.normalName = normName
+                    info.normalPath =  dumpPath + os.sep + "textures" + os.sep + texNameMap[normName]
+                textureNamePathInfo .append(info)
+        
+    global textureList
+    textureList = []
+    materialList = []
+    textureAdded = {}
+    for i, info in enumerate(textureNamePathInfo):
+        material = NoeMaterial('mesh_' + str(i) +"_material", "")
+        if info.diffusePath is not None:
+            if info.diffuseName not in textureAdded:
+                processRGBA(rapi.loadIntoByteArray(info.diffusePath),info.diffuseName)
+                textureAdded[info.diffuseName] = True
+            material.setTexture(info.diffuseName + ".dds")
+        if info.normalPath is not None:
+            if info.normalName not in textureAdded:
+                processRGBA(rapi.loadIntoByteArray(info.normalPath),info.normalName)
+                textureAdded[info.normalName] = True
+            material.setNormalTexture(info.normalName + ".dds")
+        materialList.append(material)
     
+    
+        
     #Grab the mesh specs and commit
     for meshIdx, info in enumerate(meshesInfo):
         if meshesHidden[meshIdx]:
@@ -335,7 +418,7 @@ def LoadModel(data, mdlList):
                     print("unknown uv data type")
                     return 0
             #Colors
-            elif vInfo.semantic == 5:
+            elif vInfo.semantic == 5 and bLoadVertexColors:
                 if vInfo.dataType == 3:
                     rapi.rpgBindColorBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset, 4)
                 else:
@@ -451,13 +534,17 @@ def LoadModel(data, mdlList):
             #mesh name
             rapi.rpgSetName(meshNames[meshIdx])
             
+            #material
+            rapi.rpgSetMaterial('mesh_' + str(meshIdx) +"_material")
+            
             #commit the tris
             rapi.rpgCommitTriangles(idxBuffer[idxOffset *2:],noesis.RPGEODATA_USHORT , idxCount,noesis.RPGEO_TRIANGLE, 1)
-        
+            
     try:
         mdl = rapi.rpgConstructModel()
     except:
         mdl = NoeModel()
+    mdl.setModelMaterials(NoeModelMaterials(textureList, materialList))
     mdl.setBones(joints)
     mdlList.append(mdl)
     
