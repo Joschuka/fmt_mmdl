@@ -1,6 +1,6 @@
 from inc_noesis import *
 
-#Version 0.2
+#Version 0.3
 
 # =================================================================
 # Plugin options
@@ -161,6 +161,7 @@ def LoadModel(data, mdlList):
         
         #save position, normal and joint indices info because of eventual transforms
         posOffset, normalOffset, jIdxValues, jIdxCount = None, None, None, None
+        hasNormals = False
         rapi.rpgClearBufferBinds()        
         for vInfo in vInfos:            
             #Position
@@ -176,6 +177,7 @@ def LoadModel(data, mdlList):
                 if vInfo.dataType == 3:
                     # rapi.rpgBindNormalBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
                     normalOffset = vInfo.offset
+                    hasNormals = True
                 else:
                     print("unknown normal data type")
                     return 0
@@ -186,7 +188,28 @@ def LoadModel(data, mdlList):
                 else:
                     print("unknown uv data type")
                     return 0
-                    
+            #2nd UV Layer
+            elif vInfo.semantic == 3:
+                if vInfo.dataType == 3:
+                    rapi.rpgBindUV2BufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
+                else:
+                    print("unknown uv data type")
+                    return 0
+            #3rd UV Layer
+            elif vInfo.semantic == 3:
+                if vInfo.dataType == 3:
+                    rapi.rpgBindUVXBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, 2, 2, vInfo.offset)
+                else:
+                    print("unknown uv data type")
+                    return 0
+            #Colors
+            elif vInfo.semantic == 5:
+                if vInfo.dataType == 3:
+                    rapi.rpgBindColorBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset, 4)
+                else:
+                    print("unknown color data type")
+                    return 0
+
             #Joint indices
             elif vInfo.semantic == 6:
                 assert(vInfo.count == 4)
@@ -207,6 +230,14 @@ def LoadModel(data, mdlList):
                     rapi.rpgBindBoneWeightBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset, vInfo.count)
                 else:
                     print("unknown JW data type")
+                    return 0
+
+            #Tangents
+            elif vInfo.semantic == 8:
+                if vInfo.dataType == 3:
+                    rapi.rpgBindTangentBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
+                else:
+                    print("unknown tangent data type")
                     return 0
                     
         #index buffer
@@ -252,7 +283,8 @@ def LoadModel(data, mdlList):
                 bs2.seek(posOffset)
                 positions = [[bs2.readFloat() for _ in range(3)] for __ in range(vCount)]
                 bs2.seek(normalOffset)
-                normalCoords = [[bs2.readFloat() for _ in range(3)] for __ in range(vCount)]
+                if hasNormals:
+                    normalCoords = [[bs2.readFloat() for _ in range(3)] for __ in range(vCount)]
                 
                 
                 mat = NoeMat43()
@@ -260,18 +292,21 @@ def LoadModel(data, mdlList):
                 positions = [mat.transformPoint(pos) for j,pos in enumerate(positions)]
                 
                 positions = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformPoint(pos) for j,pos in enumerate(positions)]
-                normalCoords = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformNormal(norm) for j,norm in enumerate(normalCoords)]                    
                 positions = [x for v in positions for x in v ]
-                normalCoords = [x for v in normalCoords for x in v]
+
+                if hasNormals:
+                    normalCoords = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformNormal(norm) for j,norm in enumerate(normalCoords)]  
+                    normalCoords = [x for v in normalCoords for x in v]                  
                 
                 posBuffer = struct.pack("<" + 'f'*len(positions), *positions)
-                normBuffer = struct.pack("<" + 'f'*len(normalCoords), *normalCoords)
                 rapi.rpgBindPositionBuffer(posBuffer, noesis.RPGEODATA_FLOAT, 12)
-                rapi.rpgBindNormalBuffer(normBuffer, noesis.RPGEODATA_FLOAT, 12)
+                if hasNormals:
+                    normBuffer = struct.pack("<" + 'f'*len(normalCoords), *normalCoords)
+                    rapi.rpgBindNormalBuffer(normBuffer, noesis.RPGEODATA_FLOAT, 12)
             #otherwise just bind directly
             else:
                 rapi.rpgBindPositionBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, 12, posOffset)
-                rapi.rpgBindNormalBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, 12, normalOffset)            
+                if hasNormals: rapi.rpgBindNormalBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, 12, normalOffset)            
             
             #transform
             mat = NoeMat43()
