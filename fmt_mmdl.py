@@ -13,7 +13,17 @@ from inc_noesis import *
 def registerNoesisTypes():
     handle = noesis.register("Metroid dread",".mmdl")
     noesis.setHandlerTypeCheck(handle, CheckType)
-    noesis.setHandlerLoadModel(handle, LoadModel)	
+    noesis.setHandlerLoadModel(handle, LoadModel)
+    handle = noesis.register("Metroid dread",".bctex")
+    noesis.setHandlerTypeCheck(handle, CheckTextureType)
+    noesis.setHandlerLoadRGBA(handle, LoadRGBA)
+    return 1
+
+def CheckTextureType(data):
+    bs = NoeBitStream(data)
+    bs.setEndian(NOE_LITTLEENDIAN)
+    if bs.readUInt() != 1415074893:
+        return 0
     return 1
     
 def CheckType(data):
@@ -40,6 +50,128 @@ class VertexInfo:
         self.dataType = bs.readUShort() # guess
         self.count = bs.readUShort()
         bs.readUInt() #unk
+
+class NvBlockHeader():
+    def __init__(self):
+        self.magic = None
+        self.size_ = None
+        self.dataSize = None
+        self.dataOffset = None
+        self.type_ = None
+        self.id = None
+        self.typeIdx = None
+
+    def parse(self, bs):
+        self.magic = bs.readUInt()
+        self.size_ = bs.readUInt()
+        self.dataSize = bs.readUInt64()
+        self.dataOffset = bs.readUInt64()
+        self.type_ = bs.readUInt()
+        self.id = bs.readUInt()
+        self.typeIdx = bs.readUInt()
+
+class NvTextureHeader():
+    def __init__(self):
+        self.imageSize = None
+        self.alignment = None
+        self.width = None
+        self.height = None
+        self.depth = None
+        self.target = None
+        self.format_ = None
+        self.numMips = None
+        self.sliceSize = None
+        self.textureLayout1 = None
+        self.textureLayout2 = None
+
+    def parse(self, bs):
+        self.imageSize = bs.readUInt64()
+        self.alignment = bs.readUInt()
+        self.width = bs.readUInt()
+        self.height = bs.readUInt()
+        self.depth = bs.readUInt()
+        self.target = bs.readUInt()
+        self.format_ = bs.readUInt()
+        self.numMips = bs.readUInt()
+        self.sliceSize = bs.readUInt()
+        bs.read('17i') #mip offsets, we only care about the first here
+        self.textureLayout1 = bs.readUInt()
+        self.textureLayout2 = bs.readUInt()
+        bs.readUInt()
+
+# =================================================================
+# Load texture
+# =================================================================
+
+def LoadRGBA(data, texList):
+    # Decompress
+    tempBs = NoeBitStream(data)    
+    tempBs.seek(tempBs.getSize() - 4)
+    decompSize = tempBs.readUInt()
+    tempBs.seek(8)    
+    bs = NoeBitStream(rapi.decompInflate(tempBs.readBytes(tempBs.getSize() - 8),decompSize, 15+32))    
+    bs.seek(0x20)
+    bs.seek(bs.readUInt() - 8)
+    
+    # Process the actual xtx file, thanks for the tip KillZ. Credits to : https://github.com/aboood40091/XTX-Extractor/blob/master/xtx_extract.py for the specs
+    
+    #header
+    assert bs.readUInt() == 1316374084, "Wrong texture header"
+    headerSize, majorVersion, minorVersion = bs.readUInt(), bs.readUInt(), bs.readUInt()
+    assert(majorVersion == 1)
+    
+    texHeadBlkType = 2
+    dataBlkType = 3
+    
+    texInfo = []
+    texData = []
+    while(bs.tell() < bs.getSize()):
+        checkpoint = bs.tell()
+        block = NvBlockHeader()
+        block.parse(bs)
+        
+        if block.magic != 1316373064:
+            break
+        bs.seek(checkpoint + block.dataOffset)
+        if block.type_ == texHeadBlkType:
+           texHead = NvTextureHeader()
+           texHead.parse(bs)
+           texInfo.append(texHead)
+        elif block.type_ == dataBlkType:
+           texData.append([bs.tell(), block.dataSize])
+        bs.seek(checkpoint + block.dataOffset + block.dataSize)    
+    
+    for info, data in zip(texInfo, texData):
+        bs.seek(data[0])
+        textureData = bs.readBytes(data[1])
+        
+        width = info.width
+        height = info.height
+        format = info.format_       
+        blockSize = 1 << (info.textureLayout1 & 7);
+
+        if format == 0x44:
+            format = noesis.NOESISTEX_DXT5
+        elif format == 0x4b:
+            format = noesis.FOURCC_BC5
+        
+        else:
+            print("UNKNOWN TEXTURE FORMAT !" + str(hex(format)))
+            format = noesis.NOESISTEX_UNKNOWN
+
+        bRaw = type(format) == str
+        if not bRaw:
+            blockWidth = blockHeight = 4
+            maxBlockHeight = rapi.callExtensionMethod("untile_blocklineargob_blockheight", height, 4)
+            widthInBlocks = (width + (blockWidth - 1)) // blockWidth
+            heightInBlocks = (height + (blockHeight - 1)) // blockHeight
+            textureData = rapi.callExtensionMethod("untile_blocklineargob", textureData, widthInBlocks, heightInBlocks, blockSize, maxBlockHeight)
+            textureData = rapi.imageDecodeDXT(textureData, width, height, format)
+            format = noesis.NOESISTEX_RGBA32
+        tex = NoeTexture("temp.dds", width, height, textureData, format)
+        texList.append(tex)    
+    
+    return 1
 
 # =================================================================
 # Load model
@@ -196,7 +328,7 @@ def LoadModel(data, mdlList):
                     print("unknown uv data type")
                     return 0
             #3rd UV Layer
-            elif vInfo.semantic == 3:
+            elif vInfo.semantic == 4:
                 if vInfo.dataType == 3:
                     rapi.rpgBindUVXBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, 2, 2, vInfo.offset)
                 else:
