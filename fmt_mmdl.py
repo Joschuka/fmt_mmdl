@@ -167,7 +167,6 @@ def processRGBA(data, texName = None, bIsDiffuse = False):
         height = info.height
         format = info.format_       
         # blockSize = 1 << (info.textureLayout1 & 7); breaks on characters\morphball\models\textures\samusvariamorph_d
-        print(hex(format))
         if format == 0x1:
             format = "r8"
         elif format == 0xd:
