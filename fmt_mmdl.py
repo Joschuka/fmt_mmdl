@@ -1,13 +1,13 @@
 from inc_noesis import *
 
-#Version 0.4
+#Version 0.5
 
 # =================================================================
 # Plugin options
 # =================================================================
 
 dumpPath = r"" # set the path dump, only necessary if you're using the texture scanning. For ex : r"D:\\Metroid dread\\010093801237C000\\romfs"
-bTextureScanning = False #If set to True, try to guess which file is associated to the model using the helper file.
+bTextureScanning = True #If set to True, try to guess which file is associated to the model using the helper file.
 bLoadVertexColors = False #if set to True, load the vertex colors for the mesh
 
 # =================================================================
@@ -505,12 +505,19 @@ def LoadModel(data, mdlList):
                 mat = NoeMat43()
                 mat[3] = transform
                 positions = [mat.transformPoint(pos) for j,pos in enumerate(positions)]
-                
-                positions = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformPoint(pos) for j,pos in enumerate(positions)]
+                # positions = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformPoint(pos) for j,pos in enumerate(positions)]
+                for j,pos in enumerate(positions):                    
+                    if jIdxValues[jIdxCount * j] < len(jMap): #unfortunately hacky, some models (very few, 40/8000 roughly) seem to have indices exceeding the actual jMap length, not sure where this comes from. See Metroid Dread\maps\s010_cave\s010_cave\00000006.MMDL for example or Metroid Dread\maps\s010_cave\subareas\subareapack_chozowarriorx\00000001.MMDL
+                        positions[j] = joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformPoint(pos)
+                    else:
+                        print(meshIdx)
                 positions = [x for v in positions for x in v ]
 
                 if hasNormals:
-                    normalCoords = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformNormal(norm) for j,norm in enumerate(normalCoords)]  
+                    # normalCoords = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformNormal(norm) for j,norm in enumerate(normalCoords)]  
+                    for j,norm in enumerate(normalCoords):                    
+                        if jIdxValues[jIdxCount * j] < len(jMap):
+                            normalCoords[j] = joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformNormal(norm)
                     normalCoords = [x for v in normalCoords for x in v]                  
                 
                 posBuffer = struct.pack("<" + 'f'*len(positions), *positions)
