@@ -1,6 +1,6 @@
 from inc_noesis import *
 
-#Version 0.6
+#Version 0.7
 
 # =================================================================
 # Plugin options
@@ -166,26 +166,51 @@ def processRGBA(data, texName = None, bIsDiffuse = False):
         width = info.width
         height = info.height
         format = info.format_       
-        blockSize = 1 << (info.textureLayout1 & 7);
-
-        if format == 0x44:
+        # blockSize = 1 << (info.textureLayout1 & 7); breaks on characters\morphball\models\textures\samusvariamorph_d
+        print(hex(format))
+        if format == 0x1:
+            format = "r8"
+        elif format == 0xd:
+            format = "r8g8"
+        elif format == 0x25:
+            format = "r8g8b8a8"
+        elif format == 0x42:
+            format = noesis.NOESISTEX_DXT1
+        elif format == 0x44:
             format = noesis.NOESISTEX_DXT5
         elif format == 0x4b:
-            format = noesis.FOURCC_BC5
-        
+            format = noesis.FOURCC_BC5 
+        elif format == 0x6d:
+            format = noesis.FOURCC_BC5 
         else:
             print("UNKNOWN TEXTURE FORMAT !" + str(hex(format)))
             format = noesis.NOESISTEX_UNKNOWN
-
+        
         bRaw = type(format) == str
         if not bRaw:
             blockWidth = blockHeight = 4
-            maxBlockHeight = rapi.callExtensionMethod("untile_blocklineargob_blockheight", height, 4)
+            blockSize = 8 if format == noesis.NOESISTEX_DXT1 else 16
+            maxBlockHeight = rapi.callExtensionMethod("untile_blocklineargob_blockheight", height, 4) #last param needs to be set to 3 sometomes, need to check header and find flags
             widthInBlocks = (width + (blockWidth - 1)) // blockWidth
             heightInBlocks = (height + (blockHeight - 1)) // blockHeight
             textureData = rapi.callExtensionMethod("untile_blocklineargob", textureData, widthInBlocks, heightInBlocks, blockSize, maxBlockHeight)
             textureData = rapi.imageDecodeDXT(textureData, width, height, format)
             format = noesis.NOESISTEX_RGBA32
+        else:
+            blockWidth = blockHeight = 1
+            blockSize = 2**(len(format)//2-1) #no clue if this is true or not but seems to work...
+            widthInBlocks = (width + (blockWidth - 1)) // blockWidth
+            heightInBlocks = (height + (blockHeight - 1)) // blockHeight
+            maxBlockHeight = rapi.callExtensionMethod("untile_blocklineargob_blockheight", height, 4)
+            textureData = rapi.callExtensionMethod("untile_blocklineargob", textureData, widthInBlocks, heightInBlocks, blockSize, maxBlockHeight)
+            textureData = rapi.imageDecodeRaw(textureData, width, height, format)
+            if format == "r8":
+                textureData = noesis.deinterleaveBytes(textureData, 0, 1, 4)
+                convertedData = bytearray(3*len(textureData))
+                for i in range(3): convertedData[i::3] = textureData[0::1]
+                textureData = rapi.imageDecodeRaw(convertedData, width, height, "r8g8b8")            
+            format = noesis.NOESISTEX_RGBA32
+        
         if bIsDiffuse:
             textureDataDiffuse = noesis.deinterleaveBytes(textureData, 0, 3, 4)
             textureDataDiffuse = rapi.imageDecodeRaw(textureDataDiffuse, width, height, "r8g8b8")
