@@ -1,6 +1,6 @@
 from inc_noesis import *
 
-#Version 0.7
+#Version 0.7.1
 
 # =================================================================
 # Plugin options
@@ -189,7 +189,12 @@ def processRGBA(data, texName = None, bIsDiffuse = False):
         if not bRaw:
             blockWidth = blockHeight = 4
             blockSize = 8 if format == noesis.NOESISTEX_DXT1 else 16
-            maxBlockHeight = rapi.callExtensionMethod("untile_blocklineargob_blockheight", height, 4) #last param needs to be set to 3 sometomes, need to check header and find flags
+            mbH = 4 
+            if width < 512:
+                mbH = 3
+            if width < 256:
+                mbH = 2
+            maxBlockHeight = rapi.callExtensionMethod("untile_blocklineargob_blockheight", height, mbH)
             widthInBlocks = (width + (blockWidth - 1)) // blockWidth
             heightInBlocks = (height + (blockHeight - 1)) // blockHeight
             textureData = rapi.callExtensionMethod("untile_blocklineargob", textureData, widthInBlocks, heightInBlocks, blockSize, maxBlockHeight)
