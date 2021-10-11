@@ -7,7 +7,7 @@ from inc_noesis import *
 # =================================================================
 
 dumpPath = r"" # set the path dump, only necessary if you're using the texture scanning. For ex : r"D:\\Metroid dread\\010093801237C000\\romfs"
-bTextureScanning = True #If set to True, try to guess which file is associated to the model using the helper file.
+bTextureScanning = False #If set to True, try to guess which file is associated to the model using the helper file.
 bLoadVertexColors = False #if set to True, load the vertex colors for the mesh
 
 # =================================================================
