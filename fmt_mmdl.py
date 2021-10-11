@@ -1,6 +1,6 @@
 from inc_noesis import *
 
-#Version 0.5
+#Version 0.6
 
 # =================================================================
 # Plugin options
@@ -121,7 +121,7 @@ def LoadRGBA(data, texList):
         texList.append(tex)
     return 1
 
-def processRGBA(data, texName = None):
+def processRGBA(data, texName = None, bIsDiffuse = False):
     # Decompress
     tempBs = NoeBitStream(data)    
     tempBs.seek(tempBs.getSize() - 4)
@@ -186,11 +186,30 @@ def processRGBA(data, texName = None):
             textureData = rapi.callExtensionMethod("untile_blocklineargob", textureData, widthInBlocks, heightInBlocks, blockSize, maxBlockHeight)
             textureData = rapi.imageDecodeDXT(textureData, width, height, format)
             format = noesis.NOESISTEX_RGBA32
-        if texName is None:
-            tex = NoeTexture("temp.dds", width, height, textureData, format)
+        if bIsDiffuse:
+            textureDataDiffuse = noesis.deinterleaveBytes(textureData, 0, 3, 4)
+            textureDataDiffuse = rapi.imageDecodeRaw(textureDataDiffuse, width, height, "r8g8b8")
+            textureDataOther = noesis.deinterleaveBytes(textureData, 3, 1, 4)
+            #Convert to rgb texture
+            convertedData = bytearray(3*len(textureDataOther))
+            for i in range(3): convertedData[i::3] = textureDataOther[0::1]
+            textureDataOther = rapi.imageDecodeRaw(convertedData, width, height, "r8g8b8")
+            if texName is None: #this should never be hit in theory
+                tex = NoeTexture("temp.dds", width, height, textureDataDiffuse, format)
+                textureList.append(tex)
+                tex = NoeTexture("temp_other.dds", width, height, textureDataOther, format)
+                textureList.append(tex)
+            else:
+                tex = NoeTexture(texName + ".dds", width, height, textureDataDiffuse, format)
+                textureList.append(tex)
+                tex = NoeTexture(texName[:-3] + "_emi.dds", width, height, textureDataOther, format)
+                textureList.append(tex)
         else:
-            tex = NoeTexture(texName + ".dds", width, height, textureData, format)
-        textureList.append(tex)    
+            if texName is None:
+                tex = NoeTexture("temp.dds", width, height, textureData, format)
+            else:
+                tex = NoeTexture(texName + ".dds", width, height, textureData, format)
+            textureList.append(tex)    
     
     return 1
 
@@ -321,7 +340,7 @@ def LoadModel(data, mdlList):
         material = NoeMaterial('mesh_' + str(i) +"_material", "")
         if info.diffusePath is not None:
             if info.diffuseName not in textureAdded:
-                processRGBA(rapi.loadIntoByteArray(info.diffusePath),info.diffuseName)
+                processRGBA(rapi.loadIntoByteArray(info.diffusePath),info.diffuseName, True)
                 textureAdded[info.diffuseName] = True
             material.setTexture(info.diffuseName + ".dds")
         if info.normalPath is not None:
