@@ -1,7 +1,7 @@
 from inc_noesis import *
 import os
 
-#Version 0.8
+#Version 0.8.1
 
 # =================================================================
 # Plugin options
@@ -409,6 +409,7 @@ def LoadAnim(data, joints, jointHashToIDMap, animName):
         animatedJoint.setScale(scaleNoeKeyFramedValues, noesis.NOEKF_SCALE_VECTOR_3,noesis.NOEKF_INTERPOLATE_NEAREST)
         keyframedJointList.append(animatedJoint)
     
+    anim = None
     if keyframedJointList:
         anim = NoeKeyFramedAnim(animName, joints, keyframedJointList, framerate)
     return anim
@@ -486,7 +487,9 @@ def LoadModel(data, mdlList):
             for animPath in animPaths:
                 with open(animPath, "rb") as animStream:
                     animName = "".join(os.path.basename(animPath).split(".")[:-1]) # Filename without extension
-                    animList.append(LoadAnim(animStream.read(), joints, jointHashToIDMap, animName))
+                    anim = LoadAnim(animStream.read(), joints, jointHashToIDMap, animName)
+                    if anim is not None:
+                        animList.append(anim)
                     
     # =================================================================
     # Mesh info
