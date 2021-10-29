@@ -579,11 +579,9 @@ def LoadModel(data, mdlList):
             material.setNormalTexture(info.normalName + ".dds")
         materialList.append(material)
     
-    
-        
     #Grab the mesh specs and commit
-    nonRigidMeshesInfo = []
-    bAtLeastOneRigid = False
+    rigidMeshesIndices = []
+    committedCount = 0
     for meshIdx, info in enumerate(meshesInfo):
         if not meshesHidden[meshIdx] and not bShowAllMeshes:
             continue
@@ -625,24 +623,19 @@ def LoadModel(data, mdlList):
             vBuffer = rapi.decompInflate(bs.readBytes(compSize),vBufferSize, 15+32) #gzip decomp, for 15 + 32 see : https://stackoverflow.com/questions/1838699/how-can-i-decompress-a-gzip-stream-with-zlib  
         
         #save position, normal and joint indices info because of eventual transforms
-        posOffset, normalOffset, jIdxValues, jIdxCount = None, None, None, None
-        hasNormals = False
         rapi.rpgClearBufferBinds()        
         for vInfo in vInfos:            
             #Position
             if vInfo.semantic == 0:
                 if vInfo.dataType == 3:
-                    # rapi.rpgBindPositionBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
-                    posOffset = vInfo.offset
+                    rapi.rpgBindPositionBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
                 else:
                     print("unknown position data type")
                     return 0            
             #Normal
             elif vInfo.semantic == 1:
                 if vInfo.dataType == 3:
-                    # rapi.rpgBindNormalBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
-                    normalOffset = vInfo.offset
-                    hasNormals = True
+                    rapi.rpgBindNormalBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
                 else:
                     print("unknown normal data type")
                     return 0
@@ -740,52 +733,18 @@ def LoadModel(data, mdlList):
             #joint map
             bs.seek(jMapOffset)
             jMap = bs.read(str(jMapEntryCount) + "i")
-            rapi.rpgSetBoneMap(jMap)
-            
-            #if the skinning type is 1, it's necessary to transform the vertices by the single joint they're deformed by
-            if skinningType == 1:
-                bs2 = NoeBitStream(vBuffer)
-                bs2.seek(posOffset)
-                positions = [[bs2.readFloat() for _ in range(3)] for __ in range(vCount)]
-                bs2.seek(normalOffset)
-                if hasNormals:
-                    normalCoords = [[bs2.readFloat() for _ in range(3)] for __ in range(vCount)]                
-                
-                mat = NoeMat43()
-                mat[3] = transform
-                positions = [mat.transformPoint(pos) for j,pos in enumerate(positions)]
-                # positions = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformPoint(pos) for j,pos in enumerate(positions)]
-                for j,pos in enumerate(positions):                    
-                    if jIdxValues[jIdxCount * j] < len(jMap): #unfortunately hacky, some models (very few, 40/8000 roughly) seem to have indices exceeding the actual jMap length, not sure where this comes from. See Metroid Dread\maps\s010_cave\s010_cave\00000006.MMDL for example or Metroid Dread\maps\s010_cave\subareas\subareapack_chozowarriorx\00000001.MMDL
-                        positions[j] = joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformPoint(pos)
-                    else:
-                        print(meshIdx)
-                positions = [x for v in positions for x in v ]
-
-                if hasNormals:
-                    # normalCoords = [joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformNormal(norm) for j,norm in enumerate(normalCoords)]  
-                    for j,norm in enumerate(normalCoords):                    
-                        if jIdxValues[jIdxCount * j] < len(jMap):
-                            normalCoords[j] = joints[jMap[jIdxValues[jIdxCount * j]]].getMatrix().transformNormal(norm)
-                    normalCoords = [x for v in normalCoords for x in v]                  
-                
-                posBuffer = struct.pack("<" + 'f'*len(positions), *positions)
-                rapi.rpgBindPositionBuffer(posBuffer, noesis.RPGEODATA_FLOAT, 12)
-                if hasNormals:
-                    normBuffer = struct.pack("<" + 'f'*len(normalCoords), *normalCoords)
-                    rapi.rpgBindNormalBuffer(normBuffer, noesis.RPGEODATA_FLOAT, 12)
-            #otherwise just bind directly
-            else:
-                rapi.rpgBindPositionBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, 12, posOffset)
-                if hasNormals: rapi.rpgBindNormalBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, 12, normalOffset)            
+            rapi.rpgSetBoneMap(jMap)                    
             
             #transform
             mat = NoeMat43()
             mat[3] = transform
             if not skinningType:
                 mat *= joints[jMap[0]].getMatrix()
-            if skinningType != 1:
-                rapi.rpgSetTransform(mat)
+            rapi.rpgSetTransform(mat)
+            
+            #flag skin 1 meshes
+            if skinType == 1:
+                rigidMeshesIndices.append(committedCount)
             
             #mesh name
             rapi.rpgSetName(meshNames[meshIdx])
@@ -795,13 +754,22 @@ def LoadModel(data, mdlList):
             
             #commit the tris
             rapi.rpgCommitTriangles(idxBuffer[idxOffset *2:],noesis.RPGEODATA_USHORT , idxCount,noesis.RPGEO_TRIANGLE, 1)
+        committedCount += 1
             
-    try:
-        mdl = rapi.rpgConstructModel()
-    except:
-        mdl = NoeModel()
-    mdl.setModelMaterials(NoeModelMaterials(textureList, materialList))
-    mdl.setBones(joints)
+    mdl = rapi.rpgConstructModel()    
+    if rigidMeshesIndices:
+        rapi.rpgSkinPreconstructedVertsToBones(joints)
+        mdlSkinned = rapi.rpgConstructModel()
+        meshList = list(mdl.meshes)
+        meshList = [mesh for i,mesh in enumerate(meshList) if i not in rigidMeshesIndices]
+        for idx in rigidMeshesIndices:
+            meshList.append(copy.deepcopy(mdlSkinned.meshes[idx]))
+        mdl = NoeModel(meshList)
+        
+    if textureList:
+        mdl.setModelMaterials(NoeModelMaterials(textureList, materialList))
+    if joints:
+        mdl.setBones(joints)
     if animList:
         mdl.setAnims(animList)
     mdlList.append(mdl)
