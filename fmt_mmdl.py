@@ -1,7 +1,7 @@
 from inc_noesis import *
 import os
 
-#Version 0.8.2
+#Version 0.8.3
 
 # =================================================================
 # Plugin options
@@ -724,7 +724,7 @@ def LoadModel(data, mdlList):
             if skinType is None:
                 skinType = skinningType
             elif skinningType != skinType:
-                assert(0, "different skinning types in same mesh")
+                assert 0, "different skinning types in same mesh"
             idxOffset = bs.readUInt()
             idxCount = bs.readUInt()
             jMapEntryCount = bs.readUInt()
