@@ -1,7 +1,7 @@
 from inc_noesis import *
 import os
 
-#Version 0.8.3
+Version 0.8.4
 
 # =================================================================
 # Plugin options
@@ -162,6 +162,39 @@ class NvTextureHeader():
         self.textureLayout2 = bs.readUInt()
         bs.readUInt()
 
+class NonRigidMeshInfo():
+    def __init__(self):
+        #semantics
+        self.vBuffer = None
+        self.jBuffer = None
+        self.posOffset = None
+        self.posStride = None
+        self.normOffset = None
+        self.normStride = None
+        self.uvOffset = None
+        self.uvStride = None   
+        self.uv2Offset = None        
+        self.uv2Stride = None
+        self.tanOffset = None
+        self.tanStride = None
+        self.colorOffset = None
+        self.colorStride = None
+        self.jStride = None
+        self.wOffset = None
+        self.wStride = None
+        
+        #idxBuffer
+        self.idxBuffer = None
+        self.idxCount = None
+        
+        #others
+        self.jMap = None
+        self.transMat = None
+        self.name = None
+        self.matName = None
+        
+        
+        
 # =================================================================
 # Load texture
 # =================================================================
@@ -580,8 +613,7 @@ def LoadModel(data, mdlList):
         materialList.append(material)
     
     #Grab the mesh specs and commit
-    rigidMeshesIndices = []
-    committedCount = 0
+    nonRigidMeshesInfoList = []
     for meshIdx, info in enumerate(meshesInfo):
         if not meshesHidden[meshIdx] and not bShowAllMeshes:
             continue
@@ -622,13 +654,17 @@ def LoadModel(data, mdlList):
             bs.seek(-4,1)
             vBuffer = rapi.decompInflate(bs.readBytes(compSize),vBufferSize, 15+32) #gzip decomp, for 15 + 32 see : https://stackoverflow.com/questions/1838699/how-can-i-decompress-a-gzip-stream-with-zlib  
         
-        #save position, normal and joint indices info because of eventual transforms
+        #Used to cache necessary info to delay rendering for the built-in Noesis function to auto transform vertices from bone to model space
+        nonRigidMeshesInfo = NonRigidMeshInfo()
+        nonRigidMeshesInfo.vBuffer = vBuffer
         rapi.rpgClearBufferBinds()        
         for vInfo in vInfos:            
             #Position
             if vInfo.semantic == 0:
                 if vInfo.dataType == 3:
                     rapi.rpgBindPositionBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
+                    nonRigidMeshesInfo.posOffset = vInfo.offset
+                    nonRigidMeshesInfo.posStride = vInfo.count * 4
                 else:
                     print("unknown position data type")
                     return 0            
@@ -636,6 +672,8 @@ def LoadModel(data, mdlList):
             elif vInfo.semantic == 1:
                 if vInfo.dataType == 3:
                     rapi.rpgBindNormalBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
+                    nonRigidMeshesInfo.normOffset = vInfo.offset
+                    nonRigidMeshesInfo.normStride = vInfo.count * 4
                 else:
                     print("unknown normal data type")
                     return 0
@@ -643,6 +681,8 @@ def LoadModel(data, mdlList):
             elif vInfo.semantic == 2:
                 if vInfo.dataType == 3:
                     rapi.rpgBindUV1BufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
+                    nonRigidMeshesInfo.uvOffset = vInfo.offset
+                    nonRigidMeshesInfo.uvStride = vInfo.count * 4
                 else:
                     print("unknown uv data type")
                     return 0
@@ -650,6 +690,8 @@ def LoadModel(data, mdlList):
             elif vInfo.semantic == 3:
                 if vInfo.dataType == 3:
                     rapi.rpgBindUV2BufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
+                    nonRigidMeshesInfo.uv2Offset = vInfo.offset
+                    nonRigidMeshesInfo.uv2Stride = vInfo.count * 4
                 else:
                     print("unknown uv data type")
                     return 0
@@ -664,6 +706,8 @@ def LoadModel(data, mdlList):
             elif vInfo.semantic == 5 and bLoadVertexColors:
                 if vInfo.dataType == 3:
                     rapi.rpgBindColorBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset, 4)
+                    nonRigidMeshesInfo.colorOffset = vInfo.offset
+                    nonRigidMeshesInfo.colorStride = vInfo.count * 4
                 else:
                     print("unknown color data type")
                     return 0
@@ -679,6 +723,8 @@ def LoadModel(data, mdlList):
                     jIdxValues = [int(value) for value in jIdxValues]
                     jointIndexBuffer = struct.pack("<" + 'H'*len(jIdxValues), *jIdxValues)
                     rapi.rpgBindBoneIndexBuffer(jointIndexBuffer, noesis.RPGEODATA_USHORT, vInfo.count * 2, vInfo.count)
+                    nonRigidMeshesInfo.jBuffer = jointIndexBuffer
+                    nonRigidMeshesInfo.jStride = vInfo.count * 2
                 else:
                     print("unknown JI data type")
                     return 0
@@ -686,6 +732,8 @@ def LoadModel(data, mdlList):
             elif vInfo.semantic == 7:
                 if vInfo.dataType == 3:
                     rapi.rpgBindBoneWeightBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset, vInfo.count)
+                    nonRigidMeshesInfo.wOffset = vInfo.offset
+                    nonRigidMeshesInfo.wStride = vInfo.count * 4
                 else:
                     print("unknown JW data type")
                     return 0
@@ -694,6 +742,8 @@ def LoadModel(data, mdlList):
             elif vInfo.semantic == 8:
                 if vInfo.dataType == 3:
                     rapi.rpgBindTangentBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
+                    nonRigidMeshesInfo.tanOffset = vInfo.offset
+                    nonRigidMeshesInfo.tanStride = vInfo.count * 4
                 else:
                     print("unknown tangent data type")
                     return 0
@@ -717,14 +767,9 @@ def LoadModel(data, mdlList):
             idxBuffer = rapi.decompInflate(bs.readBytes(compSize),idxCount*2, 15+32)        
         
         #Grab the joint map and index information, commit the tris
-        skinType = None #a variable to make sure no different skinning types could happen in the same mesh
-        for submeshInfoOffs in submeshInfoOffsets:
+        for submeshInfoOffs in submeshInfoOffsets:            
             bs.seek(submeshInfoOffs)
             skinningType = bs.readUInt()
-            if skinType is None:
-                skinType = skinningType
-            elif skinningType != skinType:
-                assert 0, "different skinning types in same mesh"
             idxOffset = bs.readUInt()
             idxCount = bs.readUInt()
             jMapEntryCount = bs.readUInt()
@@ -741,11 +786,16 @@ def LoadModel(data, mdlList):
             if not skinningType:
                 mat *= joints[jMap[0]].getMatrix()
             rapi.rpgSetTransform(mat)
-            
             #flag skin 1 meshes
-            if skinType == 1:
-                rigidMeshesIndices.append(committedCount)
-            
+            if skinningType != 1:
+                nonRigidMeshesInfo.idxBuffer = idxBuffer[idxOffset*2:]
+                nonRigidMeshesInfo.idxCount = idxCount
+                nonRigidMeshesInfo.name = meshNames[meshIdx]
+                nonRigidMeshesInfo.matName = 'mesh_' + str(meshIdx) +"_material"
+                nonRigidMeshesInfo.jMap = jMap
+                nonRigidMeshesInfo.transMat = mat
+                nonRigidMeshesInfoList.append(copy.deepcopy(nonRigidMeshesInfo))
+                continue
             #mesh name
             rapi.rpgSetName(meshNames[meshIdx])
             
@@ -754,17 +804,40 @@ def LoadModel(data, mdlList):
             
             #commit the tris
             rapi.rpgCommitTriangles(idxBuffer[idxOffset *2:],noesis.RPGEODATA_USHORT , idxCount,noesis.RPGEO_TRIANGLE, 1)
-        committedCount += 1
             
-    mdl = rapi.rpgConstructModel()    
-    if rigidMeshesIndices:
-        rapi.rpgSkinPreconstructedVertsToBones(joints)
-        mdlSkinned = rapi.rpgConstructModel()
-        meshList = list(mdl.meshes)
-        meshList = [mesh for i,mesh in enumerate(meshList) if i not in rigidMeshesIndices]
-        for idx in rigidMeshesIndices:
-            meshList.append(copy.deepcopy(mdlSkinned.meshes[idx]))
-        mdl = NoeModel(meshList)
+    mdlDummy = rapi.rpgConstructModel()    
+    rapi.rpgSkinPreconstructedVertsToBones(joints)
+    
+    for info in nonRigidMeshesInfoList:
+        rapi.rpgClearBufferBinds()
+        if info.posOffset is not None:
+            rapi.rpgBindPositionBufferOfs(info.vBuffer, noesis.RPGEODATA_FLOAT, info.posStride, info.posOffset)
+        if info.normOffset is not None:
+            rapi.rpgBindNormalBufferOfs(info.vBuffer, noesis.RPGEODATA_FLOAT, info.normStride, info.normOffset)
+        if info.uvOffset is not None:
+            rapi.rpgBindUV1BufferOfs(info.vBuffer, noesis.RPGEODATA_FLOAT, info.uvStride, info.uvOffset)
+        if info.uv2Offset is not None:
+            rapi.rpgBindUV2BufferOfs(info.vBuffer, noesis.RPGEODATA_FLOAT, info.uv2Stride, info.uv2Offset)
+        if info.colorOffset is not None and bLoadVertexColors:
+            rapi.rpgBindColorBufferOfs(info.vBuffer, noesis.RPGEODATA_FLOAT, info.colorStride, info.colorOffset, 4)
+        if info.jBuffer is not None:
+            rapi.rpgBindBoneIndexBuffer(info.jBuffer, noesis.RPGEODATA_USHORT, info.jStride, info.jStride//2)
+        if info.wOffset is not None:
+            rapi.rpgBindBoneWeightBufferOfs(info.vBuffer, noesis.RPGEODATA_FLOAT, info.wStride, info.wOffset, info.wStride//4)
+        if info.tanOffset is not None:
+            rapi.rpgBindTangentBufferOfs(info.vBuffer, noesis.RPGEODATA_FLOAT, info.tanStride, info.tanOffset)        
+        if info.jMap is not None:
+            rapi.rpgSetBoneMap(info.jMap)
+        if info.transMat is not None:
+            rapi.rpgSetTransform(info.transMat)
+        if info.matName is not None:
+            rapi.rpgSetMaterial(info.matName)
+        if info.name is not None:
+            rapi.rpgSetName(info.name)
+        if info.idxBuffer is not None:
+            rapi.rpgCommitTriangles(info.idxBuffer, noesis.RPGEODATA_USHORT , info.idxCount,noesis.RPGEO_TRIANGLE)
+        
+    mdl = rapi.rpgConstructModel()
         
     if textureList:
         mdl.setModelMaterials(NoeModelMaterials(textureList, materialList))
