@@ -517,7 +517,7 @@ def LoadModel(data, mdlList):
                     if lowerName.endswith(".bcskla") or lowerName.endswith(".manm"):
                         fullPath = os.path.join(root, fileName)
                         animPaths.append(fullPath)
-            for animPath in animPaths:
+            for animPath in animPaths[:20]:
                 with open(animPath, "rb") as animStream:
                     animName = "".join(os.path.basename(animPath).split(".")[:-1]) # Filename without extension
                     anim = LoadAnim(animStream.read(), joints, jointHashToIDMap, animName)
@@ -803,11 +803,13 @@ def LoadModel(data, mdlList):
             rapi.rpgSetMaterial('mesh_' + str(meshIdx) +"_material")
             
             #commit the tris
-            rapi.rpgCommitTriangles(idxBuffer[idxOffset *2:],noesis.RPGEODATA_USHORT , idxCount,noesis.RPGEO_TRIANGLE, 1)
-            
-    mdlDummy = rapi.rpgConstructModel()    
-    rapi.rpgSkinPreconstructedVertsToBones(joints)
-    
+            rapi.rpgCommitTriangles(idxBuffer[idxOffset *2:],noesis.RPGEODATA_USHORT , idxCount,noesis.RPGEO_TRIANGLE, 1)    
+    try:
+        mdlDummy = rapi.rpgConstructModel()
+        rapi.rpgSkinPreconstructedVertsToBones(joints)
+    except:
+        mdlDummy = NoeModel()
+   
     for info in nonRigidMeshesInfoList:
         rapi.rpgClearBufferBinds()
         if info.posOffset is not None:
@@ -837,7 +839,10 @@ def LoadModel(data, mdlList):
         if info.idxBuffer is not None:
             rapi.rpgCommitTriangles(info.idxBuffer, noesis.RPGEODATA_USHORT , info.idxCount,noesis.RPGEO_TRIANGLE)
         
-    mdl = rapi.rpgConstructModel()
+    try:
+        mdl = rapi.rpgConstructModel()
+    except:
+        mdl = NoeModel()
         
     if textureList:
         mdl.setModelMaterials(NoeModelMaterials(textureList, materialList))
