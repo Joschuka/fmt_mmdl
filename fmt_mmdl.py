@@ -1,7 +1,7 @@
 from inc_noesis import *
 import os
 
-# Version 0.8.4
+# Version 0.8.5
 
 # =================================================================
 # Plugin options
@@ -11,6 +11,7 @@ dumpPath = r"" # set the path dump, only necessary if you're using the texture s
 bLoadVertexColors = False #if set to True, load the vertex colors for the mesh
 bShowAllMeshes = False #if set to True will display all meshes in the file, including vfx meshes and others
 bLoadAnims = True #if set to True, will ask for an animation folder and load every file there
+animLimit = 40 #max number of animations loaded at once
 
 # =================================================================
 # Misc
@@ -517,7 +518,7 @@ def LoadModel(data, mdlList):
                     if lowerName.endswith(".bcskla") or lowerName.endswith(".manm"):
                         fullPath = os.path.join(root, fileName)
                         animPaths.append(fullPath)
-            for animPath in animPaths[:20]:
+            for animPath in animPaths[:animLimit]:
                 with open(animPath, "rb") as animStream:
                     animName = "".join(os.path.basename(animPath).split(".")[:-1]) # Filename without extension
                     anim = LoadAnim(animStream.read(), joints, jointHashToIDMap, animName)
