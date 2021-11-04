@@ -1,7 +1,7 @@
 from inc_noesis import *
 import os
 
-# Version 0.8.5
+# Version 0.8.6
 
 # =================================================================
 # Plugin options
