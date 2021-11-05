@@ -548,11 +548,15 @@ def LoadModel(data, mdlList):
     #Grab the names
     meshNames = []
     for info in meshesInfo:
-        bs.seek(info[2])
-        nameOffset = bs.readUInt64()
-        meshesHidden.append(True if bs.readUByte() else False)
-        bs.seek(nameOffset)
-        meshNames.append(bs.readString())
+        if bs.seek(info[2]) != 0:
+            bs.seek(info[2])
+            nameOffset = bs.readUInt64()
+            meshesHidden.append(True if bs.readUByte() else False)
+            bs.seek(nameOffset)
+            meshNames.append(bs.readString())
+        else: 
+            meshNames.append("Mesh")
+            meshesHidden.append(True)
         
     #Grab the texture names if relevant
     textureNamePathInfo = []
