@@ -1,7 +1,7 @@
 from inc_noesis import *
 import os
 
-# Version 0.8.6
+# Version 0.8.7
 
 # =================================================================
 # Plugin options
@@ -719,7 +719,6 @@ def LoadModel(data, mdlList):
 
             #Joint indices
             elif vInfo.semantic == 6:
-                assert(vInfo.count == 4)
                 if vInfo.dataType == 3: # why would you do that...
                     bs2 = NoeBitStream(vBuffer)
                     bs2.seek(vInfo.offset)
@@ -746,9 +745,10 @@ def LoadModel(data, mdlList):
             #Tangents
             elif vInfo.semantic == 8:
                 if vInfo.dataType == 3:
-                    rapi.rpgBindTangentBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
-                    nonRigidMeshesInfo.tanOffset = vInfo.offset
-                    nonRigidMeshesInfo.tanStride = vInfo.count * 4
+                    if vInfo.count == 4:
+                        rapi.rpgBindTangentBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vInfo.count * 4, vInfo.offset)
+                        nonRigidMeshesInfo.tanOffset = vInfo.offset
+                        nonRigidMeshesInfo.tanStride = vInfo.count * 4
                 else:
                     print("unknown tangent data type")
                     return 0
