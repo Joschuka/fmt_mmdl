@@ -1,7 +1,7 @@
 from inc_noesis import *
 import os
 
-# Version 0.8.7
+# Version 0.8.8
 
 # =================================================================
 # Plugin options
@@ -79,14 +79,20 @@ def ValidateInputDirectory(inVal):
 def CheckTextureType(data):
     bs = NoeBitStream(data)
     bs.setEndian(NOE_LITTLEENDIAN)
-    if bs.readUInt() != 1415074893:
+    magic = bs.readBytes(4)
+    major_version = bs.readUShort()
+    minor_version = bs.readUShort()
+    if magic != b"MTXT" or major_version != 1 or minor_version != 8:
         return 0
     return 1
     
 def CheckType(data):
     bs = NoeBitStream(data)
     bs.setEndian(NOE_LITTLEENDIAN)
-    if bs.readUInt() != 1279544653:
+    magic = bs.readBytes(4)
+    major_version = bs.readUShort()
+    minor_version = bs.readUShort()
+    if magic != b"MMDL" or major_version != 1 or minor_version != 58:
         return 0
     return 1
 
