@@ -1,7 +1,7 @@
 from inc_noesis import *
 import os
 
-# Version 0.8.8
+# Version 0.8.9
 
 # =================================================================
 # Plugin options
@@ -118,8 +118,15 @@ class TexNamePathInfo:
     def __init__(self):
         self.diffuseName = None
         self.diffusePath = None
+        self.pbrName = None
+        self.pbrPath = None
         self.normalName = None
         self.normalPath = None
+
+class TexType:
+    DEFAULT = 0
+    DIFFUSE = 1
+    PBR = 2
 
 class NvBlockHeader():
     def __init__(self):
@@ -214,7 +221,7 @@ def LoadRGBA(data, texList):
         texList.append(tex)
     return 1
 
-def processRGBA(data, texName = None, bIsDiffuse = False):
+def processRGBA(data, texName = None, textureType=TexType.DEFAULT):
     # Decompress
     tempBs = NoeBitStream(data)    
     tempBs.seek(tempBs.getSize() - 4)
@@ -308,7 +315,7 @@ def processRGBA(data, texName = None, bIsDiffuse = False):
                 textureData = rapi.imageDecodeRaw(convertedData, width, height, "r8g8b8")            
             format = noesis.NOESISTEX_RGBA32
         
-        if bIsDiffuse:
+        if textureType == TexType.DIFFUSE:
             textureDataDiffuse = noesis.deinterleaveBytes(textureData, 0, 3, 4)
             textureDataDiffuse = rapi.imageDecodeRaw(textureDataDiffuse, width, height, "r8g8b8")
             textureDataOther = noesis.deinterleaveBytes(textureData, 3, 1, 4)
@@ -326,6 +333,11 @@ def processRGBA(data, texName = None, bIsDiffuse = False):
                 textureList.append(tex)
                 tex = NoeTexture(texName[:-3] + "_emi.dds", width, height, textureDataOther, format)
                 textureList.append(tex)
+        elif textureType == TexType.PBR:
+            # Have to swap red and blue channels since Noesis expects metalness in red
+            convertedData = rapi.imageSwapChannelRGBA32(textureData, 0, 2)
+            tex = NoeTexture(texName + ".dds", width, height, convertedData, format)
+            textureList.append(tex)
         else:
             if texName is None:
                 tex = NoeTexture("temp.dds", width, height, textureData, format)
@@ -570,18 +582,20 @@ def LoadModel(data, mdlList):
         textureNamesList = []
         for info in meshesInfo:
             bs.seek(info[1] + 304)
-            diffuseNameOffs, _, normalNameOffs = bs.readUInt64(), bs.readUInt64(), bs.readUInt64()
+            diffuseNameOffs, _, normalNameOffs, _, pbrNameOffs = bs.read("QQQQQ")
             bs.seek(diffuseNameOffs)
             diffuseName = bs.readString()
             bs.seek(normalNameOffs)
             normalName = bs.readString()
-            textureNamesList.append([diffuseName, normalName])
+            bs.seek(pbrNameOffs)
+            pbrName = bs.readString()
+            textureNamesList.append([diffuseName, normalName, pbrName])
         
         #check if we have at list a valid name, if so load the map from the file
         bHasValidName = False
         for textureNames in textureNamesList:
-            diffName, normName = textureNames[0], textureNames[1]
-            if diffName or normName:
+            diffName, normName, pbrName = textureNames[0], textureNames[1], textureNames[2]
+            if diffName or normName or pbrName:
                 bHasValidName = True
                 break
                 
@@ -595,7 +609,7 @@ def LoadModel(data, mdlList):
                 texNameMap[line.split()[0]] = line.split()[1]
             
             for textureNames in textureNamesList:
-                diffName, normName = textureNames[0], textureNames[1]
+                diffName, normName, pbrName = textureNames[0], textureNames[1], textureNames[2]
                 info = TexNamePathInfo()
                 if diffName and diffName in texNameMap:
                     info.diffuseName = diffName
@@ -603,6 +617,9 @@ def LoadModel(data, mdlList):
                 if normName and normName in texNameMap:
                     info.normalName = normName
                     info.normalPath =  dumpPath + os.sep + "textures" + os.sep + texNameMap[normName]
+                if pbrName and pbrName in texNameMap:
+                    info.pbrName = pbrName
+                    info.pbrPath = dumpPath + os.sep + "textures" + os.sep + texNameMap[pbrName]
                 textureNamePathInfo .append(info)
         
     global textureList
@@ -621,6 +638,12 @@ def LoadModel(data, mdlList):
                 processRGBA(rapi.loadIntoByteArray(info.normalPath),info.normalName)
                 textureAdded[info.normalName] = True
             material.setNormalTexture(info.normalName + ".dds")
+        if info.pbrPath is not None:
+            if info.pbrName not in textureAdded:
+                processRGBA(rapi.loadIntoByteArray(info.pbrPath), info.pbrName, TexType.PBR)
+                textureAdded[info.pbrName] = True
+            material.setSpecularTexture(info.pbrName + ".dds")
+            material.flags |= noesis.NMATFLAG_PBR_METAL | noesis.NMATFLAG_PBR_SPEC_IR_RG
         materialList.append(material)
     
     #Grab the mesh specs and commit
